@@ -40,15 +40,29 @@ def init_torch_seeds(seed=0):
 
 
 def select_device(device='', batch_size=None):
+    '''选择要使用的设备。
+    参数：
+        device: 'cpu' or '0' or '0,1,2,3'
+        batch_size: batch size
+    返回值：
+        torch.device('cuda:0')或者torch.device('cpu')
+    '''
     # device = 'cpu' or '0' or '0,1,2,3'
+    # 是否使用CPU
     cpu_request = device.lower() == 'cpu'
+    # device非空且不是CPU，则使用GPU
     if device and not cpu_request:  # if device requested other than 'cpu'
+        # 设置环境变量CUDA_VISIBLE_DEVICES
         os.environ['CUDA_VISIBLE_DEVICES'] = device  # set environment variable
+        # GPU必须可用
         assert torch.cuda.is_available(), 'CUDA unavailable, invalid device %s requested' % device  # check availablity
 
+    # 是否使用GPU
     cuda = False if cpu_request else torch.cuda.is_available()
+    # 如果使用GPU
     if cuda:
         c = 1024 ** 2  # bytes to MB
+        # GPU数量
         ng = torch.cuda.device_count()
         if ng > 1 and batch_size:  # check that batch_size is compatible with device_count
             assert batch_size % ng == 0, 'batch-size %g not multiple of GPU count %g' % (batch_size, ng)
@@ -58,14 +72,18 @@ def select_device(device='', batch_size=None):
             if i == 1:
                 s = ' ' * len(s)
             logger.info("%sCUDA:%g (%s, %dMB)" % (s, i, x[i].name, x[i].total_memory / c))
+    # 使用CPU
     else:
         logger.info(f'Using torch {torch.__version__} CPU')
 
     logger.info('')  # skip a line
+    # 使用第1个GPU或CPU
     return torch.device('cuda:0' if cuda else 'cpu')
 
 
 def time_synchronized():
+    '''
+    '''
     torch.cuda.synchronize() if torch.cuda.is_available() else None
     return time.time()
 
@@ -80,13 +98,21 @@ def intersect_dicts(da, db, exclude=()):
 
 
 def initialize_weights(model):
+    '''初始化权重。
+    参数：
+        model: 
+    '''
+    # 遍历模型中的模块
     for m in model.modules():
         t = type(m)
+        # 如果是卷积层，跳过
         if t is nn.Conv2d:
             pass  # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        # 如果是BN层，eps=1e-3, momentum=0.03
         elif t is nn.BatchNorm2d:
             m.eps = 1e-3
             m.momentum = 0.03
+        # 如果是激活函数，原地计算
         elif t in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
             m.inplace = True
 
@@ -117,6 +143,8 @@ def prune(model, amount=0.3):
 
 
 def fuse_conv_and_bn(conv, bn):
+    '''
+    '''
     # Fuse convolution and batchnorm layers https://tehnokv.com/posts/fusing-batchnorm-and-conv/
     fusedconv = nn.Conv2d(conv.in_channels,
                           conv.out_channels,
@@ -140,6 +168,8 @@ def fuse_conv_and_bn(conv, bn):
 
 
 def model_info(model, verbose=False, img_size=640):
+    '''
+    '''
     # Model information. img_size may be int or list, i.e. img_size=640 or img_size=[640, 320]
     n_p = sum(x.numel() for x in model.parameters())  # number parameters
     n_g = sum(x.numel() for x in model.parameters() if x.requires_grad)  # number gradients
@@ -183,13 +213,24 @@ def load_classifier(name='resnet101', n=2):
 
 
 def scale_img(img, ratio=1.0, same_shape=False):  # img(16,3,256,416), r=ratio
+    '''
+    参数：
+        img: 1个batch的图像数据，形状：(batch_size, channel, height, width)
+        ratio: 缩放比例
+        same_shape: 
+    '''
     # scales img(bs,3,y,x) by ratio
+    # 如果缩放比例是1，直接返回
     if ratio == 1.0:
         return img
     else:
+        # 高和宽
         h, w = img.shape[2:]
+        # 缩放后的高和宽
         s = (int(h * ratio), int(w * ratio))  # new size
+        # 应用缩放，使用双线性插值
         img = F.interpolate(img, size=s, mode='bilinear', align_corners=False)  # resize
+        # 
         if not same_shape:  # pad/crop img
             gs = 32  # (pixels) grid size
             h, w = [math.ceil(x * ratio / gs) * gs for x in (h, w)]
@@ -197,6 +238,13 @@ def scale_img(img, ratio=1.0, same_shape=False):  # img(16,3,256,416), r=ratio
 
 
 def copy_attr(a, b, include=(), exclude=()):
+    '''把b的属性复制到a，并指定包括哪些属性和不包括哪些属性。
+    参数：
+        a: 目的对象
+        b: 来源对象
+        include: 包括哪些属性
+        exclude: 不包括哪些属性
+    '''
     # Copy attributes from b to a, options to only include [...] and to exclude [...]
     for k, v in b.__dict__.items():
         if (len(include) and k not in include) or k.startswith('_') or k in exclude:

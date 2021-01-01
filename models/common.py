@@ -1,4 +1,4 @@
-# This file contains modules common to various models
+# 可以用于不同模型的通用模块
 
 import math
 import numpy as np
@@ -12,6 +12,13 @@ from utils.plots import color_list
 
 
 def autopad(k, p=None):  # kernel, padding
+    '''根据kernel size计算padding，使输出的特征图尺寸不变(stride=1的情况下)。
+    参数：
+        k: kernel size
+        p: padding
+    返回值：
+        p: padding
+    '''
     # Pad to 'same'
     if p is None:
         p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
@@ -19,27 +26,58 @@ def autopad(k, p=None):  # kernel, padding
 
 
 def DWConv(c1, c2, k=1, s=1, act=True):
+    '''DW卷积(Xception)
+    参数：
+        c1: 输入通道数
+        c2: 输出通道数
+        k: 卷积核大小
+        s: 步长
+        act: 是否有激活函数
+    '''
     # Depthwise convolution
+    # 分组数g是输入通道数c1和输出通道数c2的最大公约数
     return Conv(c1, c2, k, s, g=math.gcd(c1, c2), act=act)
 
 
 class Conv(nn.Module):
-    # Standard convolution
+    '''标准卷积层。
+    参数：
+        c1: 输入通道数
+        c2: 输出通道数
+        k: 卷积核大小
+        s: 步长
+        p: 填充
+        g: 分组数
+        act: 是否有激活函数
+    '''
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super(Conv, self).__init__()
+        # 卷积
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)
+        # BN
         self.bn = nn.BatchNorm2d(c2)
+        # 激活函数Leaky ReLU
         self.act = nn.LeakyReLU(0.1) if act else nn.Identity()
 
     def forward(self, x):
+        # conv -> bn -> act
         return self.act(self.bn(self.conv(x)))
 
     def fuseforward(self, x):
+        # 不使用BN
+        # conv -> act
         return self.act(self.conv(x))
 
 
 class Bottleneck(nn.Module):
-    # Standard bottleneck
+    '''标准瓶颈层(ResNet)。
+    参数：
+        c1: 输入通道数
+        c2: 输出通道数
+        shortcut: 
+        g: 分组数
+        e: 
+    '''
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
         super(Bottleneck, self).__init__()
         c_ = int(c2 * e)  # hidden channels
@@ -52,6 +90,10 @@ class Bottleneck(nn.Module):
 
 
 class BottleneckCSP(nn.Module):
+    '''
+    参数：
+
+    '''
     # CSP Bottleneck https://github.com/WongKinYiu/CrossStagePartialNetworks
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
         super(BottleneckCSP, self).__init__()
@@ -70,7 +112,13 @@ class BottleneckCSP(nn.Module):
         return self.cv4(self.act(self.bn(torch.cat((y1, y2), dim=1))))
 
 
-class SPP(nn.Module):
+class SPP(nn.Module):   
+    '''SPP层。
+    参数：
+        c1: 
+        c2: 
+        k: 
+    '''
     # Spatial pyramid pooling layer used in YOLOv3-SPP
     def __init__(self, c1, c2, k=(5, 9, 13)):
         super(SPP, self).__init__()
@@ -85,6 +133,16 @@ class SPP(nn.Module):
 
 
 class Focus(nn.Module):
+    '''
+    参数：
+        c1: 输入通道数
+        c2: 输出通道数
+        k: 卷积核大小
+        s: 步长
+        p: 填充
+        g: 分组数
+        act: 是否有激活函数
+    '''
     # Focus wh information into c-space
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super(Focus, self).__init__()
@@ -95,6 +153,10 @@ class Focus(nn.Module):
 
 
 class Concat(nn.Module):
+    '''把多个张量在某个维度拼接起来。
+    参数：
+        dimension: 拼接的维度
+    '''
     # Concatenate a list of tensors along dimension
     def __init__(self, dimension=1):
         super(Concat, self).__init__()
@@ -105,9 +167,14 @@ class Concat(nn.Module):
 
 
 class NMS(nn.Module):
+    '''非极大抑制模块。
+    '''
     # Non-Maximum Suppression (NMS) module
+    # 置信度阈值
     conf = 0.25  # confidence threshold
+    # IoU阈值
     iou = 0.45  # IoU threshold
+    # 对哪些类别应用NMS
     classes = None  # (optional list) filter by class
 
     def __init__(self):
@@ -118,10 +185,18 @@ class NMS(nn.Module):
 
 
 class autoShape(nn.Module):
+    '''支持cv2/np/PIL/torch输入的模型wrapper，包括预处理、推理、NMS。
+    参数：
+        model: 模型
+    '''
     # input-robust model wrapper for passing cv2/np/PIL/torch inputs. Includes preprocessing, inference and NMS
+    # 输入尺寸
     img_size = 640  # inference size (pixels)
+    # NMS：置信度阈值
     conf = 0.25  # NMS confidence threshold
+    # NMS：IoU阈值
     iou = 0.45  # NMS IoU threshold
+    # NMS：对哪些类应用NMS
     classes = None  # (optional list) filter by class
 
     def __init__(self, model):
@@ -129,6 +204,13 @@ class autoShape(nn.Module):
         self.model = model.eval()
 
     def forward(self, imgs, size=640, augment=False, profile=False):
+        '''
+        参数：
+            imgs: 不同格式的输入图像
+            size: 输入尺寸
+            augment: 是否应用数据增强
+            profile: 
+        '''
         # supports inference from various sources. For height=720, width=1280, RGB images example inputs are:
         #   opencv:     imgs = cv2.imread('image.jpg')[:,:,::-1]  # HWC BGR to RGB x(720,1280,3)
         #   PIL:        imgs = Image.open('image.jpg')  # HWC x(720,1280,3)
@@ -137,12 +219,15 @@ class autoShape(nn.Module):
         #   multiple:   imgs = [Image.open('image1.jpg'), Image.open('image2.jpg'), ...]  # list of images
 
         p = next(self.model.parameters())  # for device and type
+        # 如果是PyTorch的Tensor类型
         if isinstance(imgs, torch.Tensor):  # torch
             return self.model(imgs.to(p.device).type_as(p), augment, profile)  # inference
 
         # Pre-process
+        # 保证imgs是列表，即使只有一张图片
         if not isinstance(imgs, list):
             imgs = [imgs]
+        # 
         shape0, shape1 = [], []  # image and inference shapes
         batch = range(len(imgs))  # batch size
         for i in batch:

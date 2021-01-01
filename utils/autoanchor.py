@@ -8,6 +8,10 @@ from tqdm import tqdm
 
 
 def check_anchor_order(m):
+    '''
+    参数：
+        m: 
+    '''
     # Check anchor order against stride order for YOLOv3 Detect() module m, and correct if necessary
     a = m.anchor_grid.prod(-1).view(-1)  # anchor area
     da = a[-1] - a[0]  # delta a

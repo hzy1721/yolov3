@@ -1,4 +1,4 @@
-# Dataset utils and dataloaders
+# 数据集和数据加载器实用工具
 
 import glob
 import logging
@@ -23,31 +23,52 @@ from utils.general import xyxy2xywh, xywh2xyxy
 from utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
+# 关于如何使用YOLOv3训练自己数据的wiki链接
 help_url = 'https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data'
+# 可接受的图片类型
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng']  # acceptable image suffixes
+# 可接受的视频类型
 vid_formats = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
 logger = logging.getLogger(__name__)
 
 # Get orientation exif tag
+# 获取'Orientation'的Tag ID
 for orientation in ExifTags.TAGS.keys():
     if ExifTags.TAGS[orientation] == 'Orientation':
         break
 
 
 def get_hash(files):
+    '''生成文件路径列表的hash值。
+    参数：
+        files: 文件路径列表
+    返回值：
+        1个hash值
+    '''
     # Returns a single hash value of a list of files
+    # 把路径列表中所有文件的大小加起来
     return sum(os.path.getsize(f) for f in files if os.path.isfile(f))
 
 
 def exif_size(img):
+    '''返回考虑了旋转信息的图片(宽, 高)。
+    参数：
+        img: PIL图片
+    返回值：
+        图片的真正(宽, 高)
+    '''
     # Returns exif-corrected PIL size
+    # (宽, 高)
     s = img.size  # (width, height)
     try:
+        # 获取方向信息
         rotation = dict(img._getexif().items())[orientation]
+        # 如果是顺时针旋转90度(6)或270度(9)，交换宽和高
         if rotation == 6:  # rotation 270
             s = (s[1], s[0])
         elif rotation == 8:  # rotation 90
             s = (s[1], s[0])
+    # 发生异常不做处理
     except:
         pass
 
@@ -56,8 +77,31 @@ def exif_size(img):
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
                       rank=-1, world_size=1, workers=8, image_weights=False):
+    '''创建数据加载器。
+    参数：
+        path: 
+        imgsz: 
+        batch_size: 
+        stride: 
+        opt: 
+        hyp: 
+        augment: 
+        cache: 
+        pad: 
+        rect: 
+        rank: 
+        world_size: 
+        workers: 
+        image_weights: 
+    返回值：
+        dataloader: 
+        dataset: 
+    '''
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
+    # DDP: DistributedDataParallel 分布式数据并行
+    # 确保只有DDP中的第一个进程处理数据集，其他进程可以使用缓存
     with torch_distributed_zero_first(rank):
+        # 数据集
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
                                       augment=augment,  # augment images
                                       hyp=hyp,  # augmentation hyperparameters
@@ -69,9 +113,13 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       rank=rank,
                                       image_weights=image_weights)
 
+    # batch size
     batch_size = min(batch_size, len(dataset))
+    # 多进程数
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
+    # 采样器
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
+    # 加载器
     loader = torch.utils.data.DataLoader if image_weights else InfiniteDataLoader
     # Use torch.utils.data.DataLoader() if dataset.properties will update during training else InfiniteDataLoader()
     dataloader = loader(dataset,
@@ -334,42 +382,83 @@ def img2label_paths(img_paths):
 
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
+    '''数据集：图片+标注
+    参数：
+        path: 图片路径列表
+        img_size: 图片尺寸
+        batch_size: batch size
+        augment: 是否数据增强
+        hyp: 
+        rect: 
+        image_weights: 
+        cache_images: 
+        single_cls: 
+        stride: 
+        pad: 
+        rank: 
+    '''
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, rank=-1):
+        # 图片尺寸
         self.img_size = img_size
+        # 是否数据增强
         self.augment = augment
+        # 
         self.hyp = hyp
+        # 
         self.image_weights = image_weights
+        # 
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
+        # 步长
         self.stride = stride
 
         try:
+            # 图片文件路径列表
             f = []  # image files
+            # 遍历路径列表
             for p in path if isinstance(path, list) else [path]:
+                # 跨平台的
                 p = Path(p)  # os-agnostic
+                # 如果是目录，递归搜索目录
                 if p.is_dir():  # dir
                     f += glob.glob(str(p / '**' / '*.*'), recursive=True)
+                # 如果是文件
                 elif p.is_file():  # file
+                    # 只读方式打开
                     with open(p, 'r') as t:
+                        # 读入为行的列表
                         t = t.read().strip().splitlines()
+                        # 父目录路径+分隔符
                         parent = str(p.parent) + os.sep
+                        # 遍历每一行，相对路径 -> 绝对路径
                         f += [x.replace('./', parent) if x.startswith('./') else x for x in t]  # local to global path
+                # 路径不存在
                 else:
                     raise Exception('%s does not exist' % p)
+            # 遍历图片文件列表，如果文件属于可接受的类型，把'/'用当前OS的分隔符代替，然后排序整个列表
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
+            # 列表不能为空
             assert self.img_files, 'No images found'
+        # 加载数据时发生错误
         except Exception as e:
             raise Exception('Error loading data from %s: %s\nSee %s' % (path, e, help_url))
 
         # Check cache
+        # 根据图片的路径获取标注文件的路径
         self.label_files = img2label_paths(self.img_files)  # labels
+        # 在第一个标注文件的父目录中寻找后缀为.cache的文件
         cache_path = Path(self.label_files[0]).parent.with_suffix('.cache')  # cached labels
+        # 如果找到了这个文件
         if cache_path.is_file():
+            # 加载为字典
             cache = torch.load(cache_path)  # load
+            # 如果hash不正确或者没有'results'这个键
             if cache['hash'] != get_hash(self.label_files + self.img_files) or 'results' not in cache:  # changed
+                # 重新缓存
                 cache = self.cache_labels(cache_path)  # re-cache
+        # 没找到就重新缓存
         else:
             cache = self.cache_labels(cache_path)  # cache
 
@@ -434,21 +523,36 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 pbar.desc = 'Caching images (%.1fGB)' % (gb / 1E9)
 
     def cache_labels(self, path=Path('./labels.cache')):
+        '''缓存标注。
+        参数：
+            path: 缓存文件存放的路径，默认为当前目录下的labels.cache文件
+        '''
         # Cache dataset labels, check images and read shapes
+        # 
         x = {}  # dict
+        # 
         nm, nf, ne, nc = 0, 0, 0, 0  # number missing, found, empty, duplicate
+        # 进度条初始化
         pbar = tqdm(zip(self.img_files, self.label_files), desc='Scanning images', total=len(self.img_files))
+        # 遍历图片和标注路径
         for i, (im_file, lb_file) in enumerate(pbar):
             try:
                 # verify images
+                # 尝试打开图片文件
                 im = Image.open(im_file)
+                # 检查完整性
                 im.verify()  # PIL verify
+                # 图片的(宽, 高)
                 shape = exif_size(im)  # image size
+                # 尺寸必须>9
                 assert (shape[0] > 9) & (shape[1] > 9), 'image size <10 pixels'
 
                 # verify labels
+                # 如果标注文件存在
                 if os.path.isfile(lb_file):
+                    # 记录找到标注文件的数量
                     nf += 1  # label found
+                    # 只读方式打开标注文件
                     with open(lb_file, 'r') as f:
                         l = np.array([x.split() for x in f.read().strip().splitlines()], dtype=np.float32)  # labels
                     if len(l):
@@ -692,34 +796,64 @@ def replicate(img, labels):
 
 
 def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True):
+    '''保持图片的宽高比进行缩放，剩下部分用color填充。
+    参数：
+        img: 原始图片。
+        new_shape: 目标形状。
+        color: 填充颜色。
+        auto: 是否使用矩形推理。
+        scaleFill: 是否拉伸图片使其充满整个区域。
+        scaleup: 是否允许放大。
+    返回值：
+        img: 缩放到目标形状的图像。
+        ratio: 宽和高的缩放比例 (rw, rh)
+        (dw, dh): 宽和高的单侧填充长度。
+    '''
     # Resize image to a 32-pixel-multiple rectangle https://github.com/ultralytics/yolov3/issues/232
+    # 获取原图的高度和宽度 [height, width]
     shape = img.shape[:2]  # current shape [height, width]
+    # 如果传入的new_shape是int类型，则表示缩放后的大小为(new_shape, new_shape)
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
 
     # Scale ratio (new / old)
+    # 分别计算高和宽的缩放比例，取较小的值(保持原图宽高比)
     r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+    # 如果不允许放大，则要保证缩放比例<=1
     if not scaleup:  # only scale down, do not scale up (for better test mAP)
         r = min(r, 1.0)
 
     # Compute padding
+    # 宽和高的缩放比 (r, r)
     ratio = r, r  # width, height ratios
+    # 缩放后且未填充为正方形的图片形状 (width_unpad, height_unpad)
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+    # 根据目标形状和当前形状计算填充长度 dw, dh
     dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
+    # 如果使用矩形推理
     if auto:  # minimum rectangle
         dw, dh = np.mod(dw, 32), np.mod(dh, 32)  # wh padding
+    # 如果选择拉伸图片
     elif scaleFill:  # stretch
+        # 填充为0
         dw, dh = 0.0, 0.0
+        # 未填充形状即为目标形状
         new_unpad = (new_shape[1], new_shape[0])
+        # 分别计算宽和高的缩放比例(很可能不一样)
         ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
 
+    # 单侧的填充长度
     dw /= 2  # divide padding into 2 sides
     dh /= 2
 
+    # 如果原图形状不等于未填充形状，则需要先进行缩放
     if shape[::-1] != new_unpad:  # resize
-        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR) # 线性插值
+    
+    # 计算上、下、左、右的填充长度，其中下比上多1，右比左多1
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    # 使用color指定的颜色填充
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return img, ratio, (dw, dh)
 

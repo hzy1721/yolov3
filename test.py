@@ -7,6 +7,7 @@ from threading import Thread
 import numpy as np
 import torch
 import yaml
+# 进度条库
 from tqdm import tqdm
 
 from models.experimental import attempt_load
@@ -279,30 +280,54 @@ def test(data,
 
 
 if __name__ == '__main__':
+    # 定义命令行接口
     parser = argparse.ArgumentParser(prog='test.py')
+    # 权重文件
     parser.add_argument('--weights', nargs='+', type=str, default='yolov3.pt', help='model.pt path(s)')
+    # 数据集配置文件
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='*.data path')
+    # batch size
     parser.add_argument('--batch-size', type=int, default=32, help='size of each image batch')
+    # 输入的图片尺寸
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
+    # 置信度阈值，高于这个值才会被输出
     parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
+    # NMS的IoU阈值
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
+    # 任务：验证/测试/学习
     parser.add_argument('--task', default='val', help="'val', 'test', 'study'")
+    # 设备：cpu或者gpu编号(用逗号分隔)
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    # 
     parser.add_argument('--single-cls', action='store_true', help='treat as single-class dataset')
+    # 是否使用数据增强
     parser.add_argument('--augment', action='store_true', help='augmented inference')
+    # 是否输出每个类的AP
     parser.add_argument('--verbose', action='store_true', help='report mAP by class')
+    # 是否把结果保存为txt文件
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
+    # 是否把标注和预测值保存为txt文件
     parser.add_argument('--save-hybrid', action='store_true', help='save label+prediction hybrid results to *.txt')
+    # 是否保存置信度
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
+    # 是否保存为与COCO API兼容的JSON文件
     parser.add_argument('--save-json', action='store_true', help='save a cocoapi-compatible JSON results file')
+    # 项目名称
     parser.add_argument('--project', default='runs/test', help='save to project/name')
+    # 此次运行名称
     parser.add_argument('--name', default='exp', help='save to project/name')
+    # 是否允许目录已存在
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    # 获取命令行参数
     opt = parser.parse_args()
+    # 如果数据集的配置文件是以coco.yaml结尾，则将结果保存为JSON文件
     opt.save_json |= opt.data.endswith('coco.yaml')
+    # 检查数据集配置文件是否存在
     opt.data = check_file(opt.data)  # check file
+    # 打印命令行参数
     print(opt)
 
+    # 验证/测试
     if opt.task in ['val', 'test']:  # run normally
         test(opt.data,
              opt.weights,
@@ -318,7 +343,7 @@ if __name__ == '__main__':
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
              )
-
+    # 学习
     elif opt.task == 'study':  # run over a range of settings and save/plot
         for weights in ['yolov3.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt']:
             f = 'study_%s_%s.txt' % (Path(opt.data).stem, Path(weights).stem)  # filename to save to

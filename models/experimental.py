@@ -9,6 +9,8 @@ from utils.google_utils import attempt_download
 
 
 class CrossConv(nn.Module):
+    '''
+    '''
     # Cross Convolution Downsample
     def __init__(self, c1, c2, k=3, s=1, g=1, e=1.0, shortcut=False):
         # ch_in, ch_out, kernel, stride, groups, expansion, shortcut
@@ -23,6 +25,8 @@ class CrossConv(nn.Module):
 
 
 class C3(nn.Module):
+    '''
+    '''
     # Cross Convolution CSP
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
         super(C3, self).__init__()
@@ -91,6 +95,8 @@ class GhostBottleneck(nn.Module):
 
 
 class MixConv2d(nn.Module):
+    '''MixConv
+    '''
     # Mixed Depthwise Conv https://arxiv.org/abs/1907.09595
     def __init__(self, c1, c2, k=(1, 3), s=1, equal_ch=True):
         super(MixConv2d, self).__init__()
@@ -115,38 +121,68 @@ class MixConv2d(nn.Module):
 
 
 class Ensemble(nn.ModuleList):
+    '''多个模型的集成。
+    '''
     # Ensemble of models
     def __init__(self):
         super(Ensemble, self).__init__()
 
     def forward(self, x, augment=False):
+        '''
+        参数：
+            x: 输入
+            augment: 是否进行数据增强
+        返回值：
+            y: 通过集成模块的输出结果(测试阶段)
+            None: 无(训练阶段)
+        '''
+        # 输出列表
         y = []
         for module in self:
             y.append(module(x, augment)[0])
         # y = torch.stack(y).max(0)[0]  # max ensemble
         # y = torch.cat(y, 1)  # nms ensemble
+        # 拼接，求均值
         y = torch.stack(y).mean(0)  # mean ensemble
         return y, None  # inference, train output
 
 
 def attempt_load(weights, map_location=None):
+    '''加载模型权重。
+    参数：
+        weights: 权重文件的本地路径[列表]
+        map_location: 加载位置(内存/显存)
+    返回值：
+        model: 
+    '''
     # Loads an ensemble of models weights=[a,b,c] or a single model weights=[a] or weights=a
+    # 集成模块
     model = Ensemble()
+    # 遍历权重列表
     for w in weights if isinstance(weights, list) else [weights]:
+        # 尝试下载
         attempt_download(w)
+        # 加载到内存/显存并添加到集成模块中，使用FP32
         model.append(torch.load(w, map_location=map_location)['model'].float().fuse().eval())  # load FP32 model
 
     # Compatibility updates
+    # 遍历集成模型中的模块
     for m in model.modules():
+        # 激活函数原地更新
         if type(m) in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
             m.inplace = True  # pytorch 1.7.0 compatibility
+        # 标准卷积层
         elif type(m) is Conv:
+            # 非持久缓冲集合
             m._non_persistent_buffers_set = set()  # pytorch 1.6.0 compatibility
 
+    # 如果只有1个模型，返回这1个
     if len(model) == 1:
         return model[-1]  # return model
     else:
         print('Ensemble created with %s\n' % weights)
+        # 把集成模型的names和stride属性设置为最后1个模型的
         for k in ['names', 'stride']:
             setattr(model, k, getattr(model[-1], k))
+        # 返回集成模型
         return model  # return ensemble

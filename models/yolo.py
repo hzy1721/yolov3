@@ -8,6 +8,7 @@ import math
 import torch
 import torch.nn as nn
 
+# 添加当前目录到搜索模块的路径列表
 sys.path.append('./')  # to run '$ python *.py' files in subdirectories
 logger = logging.getLogger(__name__)
 
@@ -25,15 +26,26 @@ except ImportError:
 
 
 class Detect(nn.Module):
+    '''检测层。
+    参数：
+        nc: num of classes, 类别数
+        anchors: 预选框
+        ch: 
+    '''
     stride = None  # strides computed during build
     export = False  # onnx export
 
     def __init__(self, nc=80, anchors=(), ch=()):  # detection layer
         super(Detect, self).__init__()
+        # 类别数
         self.nc = nc  # number of classes
+        # 每个预选框输出值的数量
         self.no = nc + 5  # number of outputs per anchor
+        # 检测层的数量
         self.nl = len(anchors)  # number of detection layers
+        # 预选框的数量
         self.na = len(anchors[0]) // 2  # number of anchors
+        # 
         self.grid = [torch.zeros(1)] * self.nl  # init grid
         a = torch.tensor(anchors).float().view(self.nl, -1, 2)
         self.register_buffer('anchors', a)  # shape(nl,na,2)

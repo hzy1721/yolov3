@@ -28,6 +28,10 @@ cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with Py
 
 
 def set_logging(rank=-1):
+    '''
+    参数：
+        rank: 
+    '''
     logging.basicConfig(
         format="%(message)s",
         level=logging.INFO if rank in [-1, 0] else logging.WARN)
@@ -62,13 +66,24 @@ def check_img_size(img_size, s=32):
 
 
 def check_file(file):
+    '''根据输入的路径检查文件是否存在，如果不存在尝试在当前目录下搜索，搜索到就返回新的路径，搜索不到触发异常。
+    参数：
+        file: 文件的路径
+    返回值：
+        file: 
+    '''
     # Search for file if not found
+    # 如果文件存在或路径为空，直接返回
     if os.path.isfile(file) or file == '':
         return file
     else:
+        # 在当前目录下搜索
         files = glob.glob('./**/' + file, recursive=True)  # find file
+        # 未找到
         assert len(files), 'File Not Found: %s' % file  # assert file was found
+        # 找到多个
         assert len(files) == 1, "Multiple files match '%s', specify exact path: %s" % (file, files)  # assert unique
+        # 找到1个
         return files[0]  # return file
 
 
@@ -93,6 +108,13 @@ def check_dataset(dict):
 
 
 def make_divisible(x, divisor):
+    '''返回能被divisor整除的x的向上取整版本。
+    参数：
+        x: 被除数
+        divisor: 除数
+    返回值：
+        y: 能被divisor整除的x的向上取整版本 y>=x
+    '''
     # Returns x evenly divisible by divisor
     return math.ceil(x / divisor) * divisor
 
